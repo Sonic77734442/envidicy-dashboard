@@ -68,39 +68,6 @@ export default function LoginPage() {
             </p>
             {error ? <p className="auth-status">{error}</p> : null}
           </section>
-
-          <section className="panel" style={{ background: 'rgba(13, 19, 36, 0.55)' }}>
-            <p className="eyebrow">Access Model</p>
-            <h2 style={{ marginTop: 0 }}>How access works</h2>
-            <p className="muted small" style={{ marginBottom: 14 }}>
-              The product has three access layers: Envidicy as platform owner, the agency as tenant admin, and the client as a read-only viewer.
-            </p>
-            <div style={{ display: 'grid', gap: 12 }}>
-              <div>
-                <p className="muted small" style={{ margin: '0 0 8px' }}>Envidicy</p>
-                <article className="stat" style={{ textAlign: 'left' }}>
-                  <h3>Platform owner</h3>
-                  <p className="muted small">Controls the platform, agency lifecycle and reviewer flow.</p>
-                </article>
-              </div>
-
-              <div>
-                <p className="muted small" style={{ margin: '0 0 8px' }}>Agency admins</p>
-                <article className="stat" style={{ textAlign: 'left' }}>
-                  <h3>Tenant admin</h3>
-                  <p className="muted small">Connects Meta, imports ad accounts, activates them for reporting and assigns clients.</p>
-                </article>
-              </div>
-
-              <div>
-                <p className="muted small" style={{ margin: '0 0 8px' }}>Client viewers</p>
-                <article className="stat" style={{ textAlign: 'left' }}>
-                  <h3>Read-only viewer</h3>
-                  <p className="muted small">Sees only assigned reports inside Envidicy Dashboard without Meta authentication.</p>
-                </article>
-              </div>
-            </div>
-          </section>
         </div>
       </section>
     </main>
