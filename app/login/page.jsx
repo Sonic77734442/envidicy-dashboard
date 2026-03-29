@@ -1,10 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
@@ -24,8 +22,7 @@ export default function LoginPage() {
         const data = await res.json().catch(() => ({}))
         throw new Error(data?.detail || 'Unable to create session')
       }
-      router.push('/dashboard')
-      router.refresh()
+      window.location.assign('/dashboard')
     } catch (err) {
       setError(err?.message || 'Unable to create session')
     } finally {
