@@ -1,0 +1,1051 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { apiFetch } from '../../lib/api'
+import { clearAuth, getAuthToken } from '../../lib/auth'
+import AppShell from '../layout/AppShell'
+import {
+  PALETTE,
+  aggregateAudienceRows,
+  buildDateRange,
+  buildSummaryCards,
+  buildXAxisTicks,
+  dateInput,
+  datePickerProps,
+  formatInt,
+  formatMoney,
+  formatPct,
+  platformBadge,
+  platformLabel,
+  platformTheme,
+} from '../../lib/dashboard/utils'
+
+function PlatformBlock({
+  title,
+  platform,
+  status,
+  rows,
+  summary,
+  accountId,
+  setAccountId,
+  accounts,
+  onLoad,
+  pending,
+  dateFrom,
+  dateTo,
+  setDateFrom,
+  setDateTo,
+}) {
+  const badge = platformBadge(platform)
+  const dateProps = datePickerProps()
+  const summaryCards = buildSummaryCards(summary, platform === 'Meta')
+  return (
+    <section className={`panel ${platformTheme(platform)}`}>
+      <div className="dashboard-platform-head">
+        <div className="platform-title-wrap">
+          <span className={badge.cls}>{badge.text}</span>
+          <div className="dashboard-platform-title">
+            <p className="eyebrow">{platform}</p>
+            <h2>{title}</h2>
+            <p className="dashboard-platform-subtitle">Live campaign pulse, account filters and campaign-level rollup.</p>
+          </div>
+        </div>
+        <div className="dashboard-platform-status">{status}</div>
+      </div>
+
+      <div className="panel-actions dashboard-platform-actions dashboard-platform-controls">
+        <input className="field-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} {...dateProps} />
+        <input className="field-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} {...dateProps} />
+        <select className="field-input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="">All accounts</option>
+          {accounts.map((acc) => (
+            <option key={acc.id} value={String(acc.id)}>
+              {acc.name || `ID ${acc.id}`}
+              {acc.external_id ? ` · ${acc.external_id}` : ''}
+            </option>
+          ))}
+        </select>
+        <button className="btn primary" disabled={pending} onClick={onLoad} type="button">
+          {pending ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+
+      <div className="grid-3 dashboard-kpis">
+        {summaryCards.map((card) => (
+          <article className="stat dashboard-kpi-card" key={card.label}>
+            <p className="eyebrow">Metric</p>
+            <h3>{card.label}</h3>
+            <div className="stat-value">{card.value}</div>
+          </article>
+        ))}
+      </div>
+
+      <div className="table-wrapper dashboard-table-wrap" style={{ marginTop: 10 }}>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Spend</th>
+              <th>CTR</th>
+              <th>CPC</th>
+              <th>CPM</th>
+              <th>Impr</th>
+              <th>Clicks</th>
+              <th>Conv/Reach</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!rows.length ? (
+              <tr>
+                <td colSpan={8}>No data</td>
+              </tr>
+            ) : (
+              rows.slice(0, 30).map((row, idx) => (
+                <tr key={`${row.campaign_id || row.campaign_name || 'row'}-${idx}`} className="dashboard-campaign-row">
+                  <td className="dashboard-campaign-name">{row.campaign_name || row.campaign_id || '—'}</td>
+                  <td>
+                    {formatMoney(row.spend || 0)} {row.currency || row.account_currency || ''}
+                  </td>
+                  <td>{formatPct(row.ctr || 0)}</td>
+                  <td>{row.cpc ? formatMoney(row.cpc) : '—'}</td>
+                  <td>{row.cpm ? formatMoney(row.cpm) : '—'}</td>
+                  <td>{formatInt(row.impressions || 0)}</td>
+                  <td>{formatInt(row.clicks || 0)}</td>
+                  <td>{formatInt(row.conversions || row.reach || 0)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function Donut({ items, size = 220, centerTop = 'Impr', centerBottom = '' }) {
+  const radius = 13
+  const stroke = 6
+  const total = items.reduce((s, i) => s + i.value, 0)
+  if (!total) return <div className="muted">No data</div>
+
+  const circumference = 2 * Math.PI * radius
+  let offset = 0
+  const colors = ['#3b82f6', '#f59e0b', '#34d399', '#a78bfa', '#ef4444', '#22d3ee', '#f97316', '#10b981']
+
+  return (
+    <svg viewBox="0 0 36 36" style={{ width: size, height: size }}>
+      <circle cx="18" cy="18" r={radius} fill="none" stroke="var(--line)" strokeWidth={stroke} />
+      {items.map((item, idx) => {
+        const length = circumference * (item.value / total)
+        const dash = `${length.toFixed(2)} ${(circumference - length).toFixed(2)}`
+        const rotate = (offset / circumference) * 360 - 90
+        offset += length
+        return (
+          <circle
+            key={`${item.label}-${idx}`}
+            cx="18"
+            cy="18"
+            r={radius}
+            fill="none"
+            stroke={colors[idx % colors.length]}
+            strokeWidth={stroke}
+            strokeDasharray={dash}
+            transform={`rotate(${rotate.toFixed(2)} 18 18)`}
+          />
+        )
+      })}
+      <text x="18" y="17" textAnchor="middle" fill="var(--muted)" fontSize="3.2">{centerTop}</text>
+      <text x="18" y="21.5" textAnchor="middle" fill="var(--text)" fontSize="3.6" fontWeight="700">{centerBottom || formatInt(total)}</text>
+    </svg>
+  )
+}
+
+function RingList({ totals, platforms = Object.keys(PALETTE) }) {
+  const totalSpend = platforms.reduce((sum, key) => sum + Number(totals?.[key]?.spend || 0), 0)
+  if (!totalSpend) return <div className="muted">No data</div>
+
+  return (
+    <div className="ring-grid">
+      {platforms.map((key) => {
+        const color = PALETTE[key]
+        const spend = Number(totals?.[key]?.spend || 0)
+        const percent = totalSpend ? (spend / totalSpend) * 100 : 0
+        const radius = 15.915
+        const dash = Math.max(0, Math.min(100, percent))
+        return (
+          <div className="ring" key={key}>
+            <svg viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r={radius} fill="none" stroke="var(--line)" strokeWidth="4" />
+              <circle
+                cx="18"
+                cy="18"
+                r={radius}
+                fill="none"
+                stroke={color}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray={`${dash} ${100 - dash}`}
+                transform="rotate(-90 18 18)"
+              />
+            </svg>
+            <div className="ring-label">{platformLabel(key)}</div>
+            <div className="ring-value">{percent.toFixed(1)}% · ${formatMoney(spend)}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function LineChart({ series }) {
+  if (!series.length) return <div className="muted">No data</div>
+  const width = 720
+  const height = 220
+  const pad = 24
+  const maxValue = Math.max(1, ...series.map((d) => Math.max(d.spend, d.clicks)))
+  const scaleX = (idx) => pad + (idx / (series.length - 1 || 1)) * (width - pad * 2)
+  const scaleY = (value) => height - pad - (value / maxValue) * (height - pad * 2)
+  const [hoverIdx, setHoverIdx] = useState(series.length - 1)
+  const [hoverPos, setHoverPos] = useState(null)
+
+  const spendPath = series.map((d, i) => `${i === 0 ? 'M' : 'L'} ${scaleX(i)} ${scaleY(d.spend)}`).join(' ')
+  const clickPath = series.map((d, i) => `${i === 0 ? 'M' : 'L'} ${scaleX(i)} ${scaleY(d.clicks)}`).join(' ')
+  const ticks = buildXAxisTicks(series)
+  const safeIdx = Math.max(0, Math.min(series.length - 1, hoverIdx))
+  const point = series[safeIdx]
+
+  const totalSpend = series.reduce((s, x) => s + Number(x.spend || 0), 0)
+  const totalClicks = series.reduce((s, x) => s + Number(x.clicks || 0), 0)
+
+  return (
+    <div className="line-chart-wrap">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="line-chart-svg"
+        onMouseMove={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const xView = ((event.clientX - rect.left) / rect.width) * width
+          const raw = Math.round(((xView - pad) / (width - pad * 2)) * (series.length - 1))
+          setHoverIdx(Math.max(0, Math.min(series.length - 1, raw)))
+          setHoverPos({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+        }}
+        onMouseLeave={() => setHoverPos(null)}
+      >
+        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="var(--line)" strokeWidth="1" />
+        <path d={spendPath} fill="none" stroke="#3b82f6" strokeWidth="2" />
+        <path d={clickPath} fill="none" stroke="#f59e0b" strokeWidth="2" />
+        <circle cx={scaleX(safeIdx)} cy={scaleY(point.spend)} r="4" fill="#3b82f6" />
+        {ticks.map((t) => (
+          <text key={`${t.idx}-${t.label}`} x={scaleX(t.idx)} y={height - 6} textAnchor="middle" fill="var(--muted)" fontSize="10">
+            {t.label}
+          </text>
+        ))}
+      </svg>
+      {hoverPos ? (
+        <div
+          className="chart-tooltip chart-tooltip-floating"
+          style={{
+            left: Math.min(Math.max(hoverPos.x + 12, 8), width - 220),
+            top: Math.min(Math.max(hoverPos.y - 46, 8), height - 56),
+          }}
+        >
+          {point.date}
+          <br />
+          Spend {formatMoney(point.spend)} · Clicks {formatInt(point.clicks)}
+        </div>
+      ) : null}
+      <div className="legend">
+        <div className="legend-item"><span><span className="legend-dot legend-dot-spend" />Spend (total)</span><span>{formatMoney(totalSpend)}</span></div>
+        <div className="legend-item"><span><span className="legend-dot legend-dot-clicks" />Clicks (total)</span><span>{formatInt(totalClicks)}</span></div>
+        <div className="legend-item"><span className="muted">Shared scale</span></div>
+      </div>
+    </div>
+  )
+}
+
+function AccountMetricChart({ series, metricLabel, metricType }) {
+  if (!series.length) return <div className="muted">No data</div>
+  const width = 720
+  const height = 220
+  const pad = 24
+  const maxValue = Math.max(1, ...series.map((d) => Number(d.value || 0)))
+  const scaleX = (idx) => pad + (idx / (series.length - 1 || 1)) * (width - pad * 2)
+  const scaleY = (value) => height - pad - (Number(value || 0) / maxValue) * (height - pad * 2)
+  const [hoverIdx, setHoverIdx] = useState(series.length - 1)
+  const [hoverPos, setHoverPos] = useState(null)
+  const ticks = buildXAxisTicks(series)
+  const safeIdx = Math.max(0, Math.min(series.length - 1, hoverIdx))
+  const point = series[safeIdx]
+  const lineColor = metricType === 'impressions' ? '#22d3ee' : metricType === 'clicks' ? '#f59e0b' : '#3b82f6'
+  const path = series.map((d, i) => `${i === 0 ? 'M' : 'L'} ${scaleX(i)} ${scaleY(d.value)}`).join(' ')
+  const totalValue = series.reduce((sum, row) => sum + Number(row.value || 0), 0)
+  const valueText = metricType === 'spend' ? formatMoney(totalValue) : formatInt(totalValue)
+  const pointText = metricType === 'spend' ? formatMoney(point.value) : formatInt(point.value)
+
+  return (
+    <div className="line-chart-wrap">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="line-chart-svg"
+        onMouseMove={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const xView = ((event.clientX - rect.left) / rect.width) * width
+          const raw = Math.round(((xView - pad) / (width - pad * 2)) * (series.length - 1))
+          setHoverIdx(Math.max(0, Math.min(series.length - 1, raw)))
+          setHoverPos({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+        }}
+        onMouseLeave={() => setHoverPos(null)}
+      >
+        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="var(--line)" strokeWidth="1" />
+        <path d={path} fill="none" stroke={lineColor} strokeWidth="2.5" />
+        <circle cx={scaleX(safeIdx)} cy={scaleY(point.value)} r="4" fill={lineColor} />
+        {ticks.map((t) => (
+          <text key={`${t.idx}-${t.label}`} x={scaleX(t.idx)} y={height - 6} textAnchor="middle" fill="var(--muted)" fontSize="10">
+            {t.label}
+          </text>
+        ))}
+      </svg>
+      {hoverPos ? (
+        <div
+          className="chart-tooltip chart-tooltip-floating"
+          style={{
+            left: Math.min(Math.max(hoverPos.x + 12, 8), width - 220),
+            top: Math.min(Math.max(hoverPos.y - 46, 8), height - 56),
+          }}
+        >
+          {point.date}
+          <br />
+          {metricLabel} {pointText}
+        </div>
+      ) : null}
+      <div className="legend">
+        <div className="legend-item"><span>{metricLabel} (total)</span><span>{valueText}</span></div>
+      </div>
+    </div>
+  )
+}
+
+export default function DashboardWorkspace() {
+  const REVIEW_META_ONLY = true
+  const router = useRouter()
+  const initialDates = useMemo(() => dateInput(30), [])
+  const [metaDateFrom, setMetaDateFrom] = useState(initialDates.from)
+  const [metaDateTo, setMetaDateTo] = useState(initialDates.to)
+  const [googleDateFrom, setGoogleDateFrom] = useState(initialDates.from)
+  const [googleDateTo, setGoogleDateTo] = useState(initialDates.to)
+  const [tiktokDateFrom, setTiktokDateFrom] = useState(initialDates.from)
+  const [tiktokDateTo, setTiktokDateTo] = useState(initialDates.to)
+  const [vizDateFrom, setVizDateFrom] = useState(initialDates.from)
+  const [vizDateTo, setVizDateTo] = useState(initialDates.to)
+
+  const [accounts, setAccounts] = useState([])
+  const [accountsStatus, setAccountsStatus] = useState('')
+  const [deepLinkApplied, setDeepLinkApplied] = useState(false)
+  const [metaAccount, setMetaAccount] = useState('')
+  const [googleAccount, setGoogleAccount] = useState('')
+  const [tiktokAccount, setTiktokAccount] = useState('')
+
+  const [vizMetaAccount, setVizMetaAccount] = useState('')
+  const [vizGoogleAccount, setVizGoogleAccount] = useState('')
+  const [vizTiktokAccount, setVizTiktokAccount] = useState('')
+
+  const [meta, setMeta] = useState({ status: 'Waiting to load', summary: {}, rows: [], pending: false })
+  const [google, setGoogle] = useState({ status: 'Waiting to load', summary: {}, rows: [], pending: false })
+  const [tiktok, setTiktok] = useState({ status: 'Waiting to load', summary: {}, rows: [], pending: false })
+
+  const [overview, setOverview] = useState({ status: 'Waiting to load', totals: {}, daily: {}, daily_by_account: {} })
+  const [accountTrendPlatform, setAccountTrendPlatform] = useState('meta')
+  const [accountTrendAccountId, setAccountTrendAccountId] = useState('')
+  const [accountTrendMetric, setAccountTrendMetric] = useState('impressions')
+  const [initialLoadStarted, setInitialLoadStarted] = useState(false)
+  const [exportPending, setExportPending] = useState(false)
+
+  const [audienceAgePlatform, setAudienceAgePlatform] = useState('all')
+  const [audienceGeoPlatform, setAudienceGeoPlatform] = useState('all')
+  const [audienceGeoLevel, setAudienceGeoLevel] = useState('country')
+  const [audienceDevicePlatform, setAudienceDevicePlatform] = useState('all')
+  const [audienceAgeRows, setAudienceAgeRows] = useState([])
+  const [audienceGeoRows, setAudienceGeoRows] = useState([])
+  const [audienceDeviceRows, setAudienceDeviceRows] = useState([])
+  const [audienceStatus, setAudienceStatus] = useState('')
+
+  const metaAccounts = useMemo(
+    () => accounts.filter((acc) => String(acc.platform || '').toLowerCase().trim() === 'meta'),
+    [accounts]
+  )
+  const googleAccounts = useMemo(
+    () => accounts.filter((acc) => String(acc.platform || '').toLowerCase().trim() === 'google'),
+    [accounts]
+  )
+  const tiktokAccounts = useMemo(
+    () => accounts.filter((acc) => String(acc.platform || '').toLowerCase().trim() === 'tiktok'),
+    [accounts]
+  )
+
+  const spendDonutItems = useMemo(() => {
+    const totals = overview.totals || {}
+    const allowedPlatforms = REVIEW_META_ONLY ? ['meta'] : Object.keys(PALETTE)
+    return allowedPlatforms
+      .map((key) => ({ key, label: platformLabel(key), value: Number(totals?.[key]?.spend || 0) }))
+      .filter((x) => x.value > 0)
+  }, [overview.totals, REVIEW_META_ONLY])
+
+  const overviewTotalsForUi = useMemo(() => {
+    const totals = overview.totals || {}
+    if (!REVIEW_META_ONLY) return totals
+    return { meta: totals.meta || {} }
+  }, [overview.totals, REVIEW_META_ONLY])
+
+  const lineSeries = useMemo(() => {
+    const range = buildDateRange(vizDateFrom, vizDateTo)
+    const daily = overview.daily || {}
+    return range.map((date) => {
+      const m = (daily.meta || []).find((row) => row.date === date) || {}
+      if (REVIEW_META_ONLY) {
+        return {
+          date,
+          spend: Number(m.spend || 0),
+          clicks: Number(m.clicks || 0),
+          conversions: Number(m.conversions || 0),
+        }
+      }
+      const g = (daily.google || []).find((row) => row.date === date) || {}
+      const t = (daily.tiktok || []).find((row) => row.date === date) || {}
+      return {
+        date,
+        spend: Number(m.spend || 0) + Number(g.spend || 0) + Number(t.spend || 0),
+        clicks: Number(m.clicks || 0) + Number(g.clicks || 0) + Number(t.clicks || 0),
+        conversions: Number(m.conversions || 0) + Number(g.conversions || 0) + Number(t.conversions || 0),
+      }
+    })
+  }, [overview.daily, vizDateFrom, vizDateTo, REVIEW_META_ONLY])
+
+  const accountTrendAccounts = useMemo(() => {
+    const platformKey = REVIEW_META_ONLY ? 'meta' : accountTrendPlatform
+    const rows = overview?.daily_by_account?.[platformKey] || []
+    return Array.isArray(rows) ? rows : []
+  }, [overview?.daily_by_account, accountTrendPlatform, REVIEW_META_ONLY])
+
+  useEffect(() => {
+    if (!accountTrendAccounts.length) {
+      setAccountTrendAccountId('')
+      return
+    }
+    const exists = accountTrendAccounts.some((row) => String(row.account_id) === String(accountTrendAccountId))
+    if (!exists) {
+      setAccountTrendAccountId(String(accountTrendAccounts[0].account_id))
+    }
+  }, [accountTrendAccounts, accountTrendAccountId])
+
+  const accountTrendSeries = useMemo(() => {
+    const range = buildDateRange(vizDateFrom, vizDateTo)
+    const selected = accountTrendAccounts.find((row) => String(row.account_id) === String(accountTrendAccountId))
+    const daily = selected?.daily || []
+    return range.map((date) => {
+      const point = daily.find((row) => row.date === date) || {}
+      return {
+        date,
+        value: Number(point?.[accountTrendMetric] || 0),
+      }
+    })
+  }, [vizDateFrom, vizDateTo, accountTrendAccounts, accountTrendAccountId, accountTrendMetric])
+
+  const accountTrendMetricLabel =
+    accountTrendMetric === 'clicks' ? 'Clicks' : accountTrendMetric === 'spend' ? 'Spend' : accountTrendMetric === 'conversions' ? 'Conversions' : 'Impressions'
+
+  function authHeaders() {
+    const token = getAuthToken()
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
+  async function safeFetch(path) {
+    const res = await apiFetch(path, { headers: authHeaders() })
+    if (res.status === 401) {
+      clearAuth()
+      router.push('/login')
+      throw new Error('Unauthorized')
+    }
+    return res
+  }
+
+  async function exportDashboardPdf() {
+    if (exportPending) return
+    setExportPending(true)
+    try {
+      const params = new URLSearchParams()
+      params.set('date_from', vizDateFrom)
+      params.set('date_to', vizDateTo)
+      params.set('meta_date_from', metaDateFrom)
+      params.set('meta_date_to', metaDateTo)
+      if (vizMetaAccount || metaAccount) params.set('meta_account_id', vizMetaAccount || metaAccount)
+      if (metaAccount) params.set('meta_platform_account_id', metaAccount)
+      params.set('audience_age_platform', 'meta')
+      params.set('audience_geo_platform', 'meta')
+      params.set('audience_geo_level', audienceGeoLevel)
+      params.set('audience_device_platform', 'meta')
+      params.set('account_trend_platform', 'meta')
+      params.set('account_trend_metric', accountTrendMetric)
+      if (accountTrendAccountId) params.set('account_trend_account_id', accountTrendAccountId)
+
+      const res = await safeFetch(`/dashboard/export/pdf?${params.toString()}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.detail || 'Failed to generate PDF')
+      }
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `dashboard-${vizDateFrom}-${vizDateTo}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      alert(e?.message || 'Failed to generate PDF')
+    } finally {
+      setExportPending(false)
+    }
+  }
+
+  function filterAudienceRowsByPlatform(rows, platformFilter) {
+    const filter = String(platformFilter || 'all').toLowerCase()
+    if (!filter || filter === 'all') return rows
+    return rows.filter((row) => String(row.platform || '').toLowerCase().startsWith(filter))
+  }
+
+  function filterAudienceGeoRowsByLevel(rows, level) {
+    const normalized = String(level || 'country').toLowerCase()
+    const prefix = normalized === 'city' ? 'City:' : normalized === 'region' ? 'Region:' : 'Country:'
+    return rows.filter((row) => String(row.segment || '').startsWith(prefix))
+  }
+
+  const audienceAgeItems = useMemo(
+    () => aggregateAudienceRows(filterAudienceRowsByPlatform(audienceAgeRows, audienceAgePlatform)),
+    [audienceAgeRows, audienceAgePlatform]
+  )
+  const audienceGeoItems = useMemo(
+    () =>
+      aggregateAudienceRows(
+        filterAudienceGeoRowsByLevel(filterAudienceRowsByPlatform(audienceGeoRows, audienceGeoPlatform), audienceGeoLevel)
+      ),
+    [audienceGeoRows, audienceGeoPlatform, audienceGeoLevel]
+  )
+  const audienceDeviceItems = useMemo(
+    () => aggregateAudienceRows(filterAudienceRowsByPlatform(audienceDeviceRows, audienceDevicePlatform)),
+    [audienceDeviceRows, audienceDevicePlatform]
+  )
+
+  async function loadAccounts() {
+    try {
+      setAccountsStatus('Loading accounts...')
+      const res = await safeFetch('/api/dashboard/reporting/accounts')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.detail || `Failed to load accounts (${res.status})`)
+      }
+      const data = await res.json()
+      setAccounts(Array.isArray(data) ? data : [])
+      setAccountsStatus('Accounts loaded.')
+    } catch (e) {
+      setAccounts([])
+      setAccountsStatus(e?.message || 'Failed to load accounts.')
+      setMeta((s) => ({ ...s, status: e?.message || s.status }))
+    }
+  }
+
+  function buildParams(accountId, dateFrom, dateTo) {
+    const params = new URLSearchParams()
+    params.set('date_from', dateFrom)
+    params.set('date_to', dateTo)
+    if (accountId) params.set('account_id', accountId)
+    return params
+  }
+
+  async function loadMeta() {
+    setMeta((s) => ({ ...s, pending: true, status: 'Loading...' }))
+    try {
+      const params = buildParams(metaAccount, metaDateFrom, metaDateTo)
+      params.set('platform', 'meta')
+      const res = await safeFetch(`/api/dashboard/reporting/insights?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to load Meta Insights')
+      const data = await res.json()
+      setMeta({ pending: false, status: data.status || 'Data updated.', summary: data.summary || {}, rows: data.campaigns || [] })
+    } catch (e) {
+      setMeta({ pending: false, status: e?.message || 'Failed to load Meta Insights', summary: {}, rows: [] })
+    }
+  }
+
+  async function loadGoogle() {
+    setGoogle((s) => ({ ...s, pending: true, status: 'Loading...' }))
+    try {
+      const params = buildParams(googleAccount, googleDateFrom, googleDateTo)
+      params.set('platform', 'google')
+      const res = await safeFetch(`/api/dashboard/reporting/insights?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to load Google Ads')
+      const data = await res.json()
+      setGoogle({ pending: false, status: data.status || 'Data updated.', summary: data.summary || {}, rows: data.campaigns || [] })
+    } catch (e) {
+      setGoogle({ pending: false, status: e?.message || 'Failed to load Google Ads', summary: {}, rows: [] })
+    }
+  }
+
+  async function loadTiktok() {
+    setTiktok((s) => ({ ...s, pending: true, status: 'Loading...' }))
+    try {
+      const params = buildParams(tiktokAccount, tiktokDateFrom, tiktokDateTo)
+      params.set('platform', 'tiktok')
+      const res = await safeFetch(`/api/dashboard/reporting/insights?${params.toString()}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.detail || 'Failed to load TikTok Ads')
+      }
+      const data = await res.json()
+      setTiktok({ pending: false, status: data.status || 'Data updated.', summary: data.summary || {}, rows: data.campaigns || [] })
+    } catch (e) {
+      setTiktok({ pending: false, status: e?.message || 'Failed to load TikTok Ads', summary: {}, rows: [] })
+    }
+  }
+
+  async function loadOverview() {
+    setOverview((s) => ({ ...s, status: 'Loading overview...' }))
+    const params = new URLSearchParams()
+    params.set('date_from', vizDateFrom)
+    params.set('date_to', vizDateTo)
+    if (vizMetaAccount || metaAccount) params.set('meta_account_id', vizMetaAccount || metaAccount)
+    try {
+      const res = await safeFetch(`/api/dashboard/reporting/overview?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to load overview')
+      const data = await res.json()
+      setOverview({
+        status: 'Overview updated.',
+        totals: data.totals || {},
+        daily: data.daily || {},
+        daily_by_account: data.daily_by_account || {},
+      })
+    } catch (e) {
+      setOverview({ status: e?.message || 'Failed to load overview', totals: {}, daily: {}, daily_by_account: {} })
+    }
+  }
+
+  async function loadAudience(group) {
+    const params = new URLSearchParams()
+    params.set('date_from', vizDateFrom)
+    params.set('date_to', vizDateTo)
+    const selectedMeta = vizMetaAccount || metaAccount
+    const requests = [
+      safeFetch(`/api/dashboard/reporting/audience?${params.toString()}&platform=meta&group=${group}${selectedMeta ? `&account_id=${selectedMeta}` : ''}`).catch(() => null),
+    ]
+    const [metaResp] = await Promise.all(requests)
+
+    const rows = []
+    const errors = []
+
+    const parsePayload = async (resp, platform) => {
+      if (!resp) {
+        errors.push(`${platform}: request failed`)
+        return
+      }
+      if (!resp.ok) {
+        errors.push(`${platform}: ${resp.status}`)
+        return
+      }
+      const data = await resp.json().catch(() => ({ accounts: [] }))
+      ;(data.accounts || []).forEach((acc) => {
+        if (acc?.error) {
+          const accName = acc.name || acc.account_id || platform
+          errors.push(`${platform} · ${accName}: ${acc.error}`)
+          return
+        }
+        if (group === 'age_gender') {
+          ;(acc.age_gender || []).forEach((row) => {
+            rows.push({
+              platform: platform.toLowerCase(),
+              segment: platform === 'Meta' ? `${row.age} / ${row.gender}` : `${row.age_range} / ${row.gender}`,
+              impressions: row.impressions,
+              clicks: row.clicks,
+              spend: row.spend,
+            })
+          })
+        }
+        if (group === 'geo') {
+          if (platform === 'Meta') {
+            ;(acc.country || []).forEach((row) => rows.push({ platform: 'meta', segment: `Country: ${row.country}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+            ;(acc.region || []).forEach((row) => rows.push({ platform: 'meta', segment: `Region: ${row.region}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+          } else {
+            ;(acc.country || []).forEach((row) => rows.push({ platform: 'google', segment: `Country: ${row.geo}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+            ;(acc.region || []).forEach((row) => rows.push({ platform: 'google', segment: `Region: ${row.geo}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+            ;(acc.city || []).forEach((row) => rows.push({ platform: 'google', segment: `City: ${row.geo}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+          }
+        }
+        if (group === 'device') {
+          if (platform === 'Meta') {
+            ;(acc.impression_device || []).forEach((row) => rows.push({ platform: 'meta', segment: `Device: ${row.impression_device}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+            ;(acc.device_platform || []).forEach((row) => rows.push({ platform: 'meta', segment: `Device platform: ${row.device_platform}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+          } else {
+            ;(acc.device || []).forEach((row) => rows.push({ platform: 'google', segment: `Device: ${row.device}`, impressions: row.impressions, clicks: row.clicks, spend: row.spend }))
+          }
+        }
+      })
+    }
+
+    await Promise.all([parsePayload(metaResp, 'Meta')])
+    return { rows, errors }
+  }
+
+  async function refreshVisualizationBundle() {
+    setAudienceStatus('Loading visualizations...')
+    try {
+      const [ageData, geoData, deviceData] = await Promise.all([
+        loadAudience('age_gender'),
+        loadAudience('geo'),
+        loadAudience('device'),
+        loadOverview(),
+      ])
+      setAudienceAgeRows(ageData.rows)
+      setAudienceGeoRows(geoData.rows)
+      setAudienceDeviceRows(deviceData.rows)
+
+      const allErrors = [...ageData.errors, ...geoData.errors, ...deviceData.errors]
+      if (allErrors.length) {
+        console.warn('Audience data warnings:', allErrors)
+      }
+      setAudienceStatus(`Slice: Period ${vizDateFrom} — ${vizDateTo}`)
+    } catch {
+      setAudienceStatus('Failed to load audience slices.')
+    }
+  }
+
+  async function reloadAll() {
+    await Promise.all([loadMeta(), refreshVisualizationBundle()])
+  }
+
+  useEffect(() => {
+    loadAccounts()
+    if (!initialLoadStarted) {
+      setInitialLoadStarted(true)
+      reloadAll()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialLoadStarted])
+
+  useEffect(() => {
+    if (deepLinkApplied || !accounts.length) return
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+    const deepLinkPlatform = String(params.get('platform') || '').toLowerCase()
+    const deepLinkAccountId = String(params.get('account_id') || '')
+    if (!deepLinkPlatform || !deepLinkAccountId) return
+
+    if (deepLinkPlatform === 'meta') {
+      const exists = metaAccounts.some((a) => String(a.id) === deepLinkAccountId)
+      if (exists) {
+        setMetaAccount(deepLinkAccountId)
+        setVizMetaAccount(deepLinkAccountId)
+        setTimeout(() => { loadMeta() }, 0)
+      }
+    }
+
+    setDeepLinkApplied(true)
+  }, [accounts, deepLinkApplied, metaAccounts])
+
+  const audienceAgeTotal = audienceAgeItems.reduce((s, x) => s + x.value, 0)
+  const dateProps = datePickerProps()
+  const totalAccounts = accounts.length
+  const totalSpend = Object.values(overviewTotalsForUi).reduce((sum, item) => sum + Number(item?.spend || 0), 0)
+  const totalImpressions = Object.values(overviewTotalsForUi).reduce((sum, item) => sum + Number(item?.impressions || 0), 0)
+  const totalClicks = Object.values(overviewTotalsForUi).reduce((sum, item) => sum + Number(item?.clicks || 0), 0)
+  const totalTrackedConversions = Object.values(overviewTotalsForUi).reduce((sum, item) => sum + Number(item?.tracked_conversions || item?.conversions || 0), 0)
+  const totalConversionValue = Object.values(overviewTotalsForUi).reduce((sum, item) => sum + Number(item?.conversion_value || 0), 0)
+  const activePlatforms = Object.values(overviewTotalsForUi).filter((item) => Number(item?.spend || 0) > 0).length
+  const selectedWindow = `${vizDateFrom} - ${vizDateTo}`
+  const heroCards = [
+    { label: 'Spend', value: `$${formatMoney(totalSpend)}`, note: REVIEW_META_ONLY ? 'Across connected Meta accounts' : 'Across all connected platforms' },
+    { label: 'Impressions', value: formatInt(totalImpressions), note: 'Delivery for the selected period' },
+    { label: 'Clicks', value: formatInt(totalClicks), note: REVIEW_META_ONLY ? 'Meta delivery slice' : 'Unified traffic slice across platforms' },
+    { label: 'Conversions', value: formatInt(totalTrackedConversions), note: `Value $${formatMoney(totalConversionValue)} from synced conversion sources` },
+    { label: 'Accounts', value: formatInt(totalAccounts), note: REVIEW_META_ONLY ? 'Activated Meta accounts in the reviewer flow' : `${activePlatforms}/3 platforms active in overview` },
+  ]
+
+  return (
+    <AppShell
+      eyebrow="Envidicy · Insights"
+      title="Unified dashboard"
+      subtitle={REVIEW_META_ONLY ? 'Meta reviewer flow: agency-owned import, sync, and internal reporting.' : 'Overview across connected ad accounts.'}
+    >
+      <section className="dashboard-hero panel">
+        <div className="dashboard-hero-grid">
+          <div className="dashboard-hero-main">
+            <p className="eyebrow">Overview</p>
+            <h1>{REVIEW_META_ONLY ? 'Meta reporting dashboard' : 'Cross-platform performance dashboard'}</h1>
+            <p className="dashboard-hero-copy">
+              {REVIEW_META_ONLY
+                ? 'Reviewer-safe Meta-only screen: agency account import, sync, and internal client reporting without Meta authentication.'
+                : 'Unified Meta, Google, and TikTok overview with quick access to spend, delivery, clicks, and audience data for the selected period.'}
+            </p>
+            <div className="dashboard-hero-actions">
+              <button className="btn primary" onClick={exportDashboardPdf} type="button">
+                {exportPending ? 'Preparing PDF...' : 'Download report'}
+              </button>
+            </div>
+            <div className="dashboard-hero-pills">
+              <span className="chip chip-ghost">Period: {selectedWindow}</span>
+              <span className="chip chip-ghost">Accounts: {formatInt(totalAccounts)}</span>
+              <span className="chip chip-ghost">Overview: {overview.status}</span>
+            </div>
+          </div>
+          <div className="dashboard-hero-side">
+            <div className="dashboard-hero-side-card">
+              <p className="eyebrow">System status</p>
+              <div className="dashboard-hero-side-row">
+                <span>Account sync</span>
+                <strong>{accountsStatus || 'In progress'}</strong>
+              </div>
+              <div className="dashboard-hero-side-row">
+                <span>Audience slices</span>
+                <strong>{audienceStatus || 'Ready to load'}</strong>
+              </div>
+              <div className="dashboard-hero-side-row">
+                <span>Active platforms</span>
+                <strong>{REVIEW_META_ONLY ? `${activePlatforms}/1` : `${activePlatforms}/3`}</strong>
+              </div>
+              <div className="dashboard-hero-side-row">
+                <span>Tracked conversions</span>
+                <strong>{formatInt(totalTrackedConversions)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-hero-stats">
+          {heroCards.map((card) => (
+            <article className="dashboard-hero-stat" key={card.label}>
+              <p className="eyebrow">{card.label}</p>
+              <h3>{card.value}</h3>
+              <p>{card.note}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <PlatformBlock
+        title="Meta Insights"
+        platform="Meta"
+        status={meta.status}
+        rows={meta.rows}
+        summary={meta.summary}
+        accountId={metaAccount}
+        setAccountId={setMetaAccount}
+        accounts={metaAccounts}
+        onLoad={loadMeta}
+        pending={meta.pending}
+        dateFrom={metaDateFrom}
+        dateTo={metaDateTo}
+        setDateFrom={setMetaDateFrom}
+        setDateTo={setMetaDateTo}
+      />
+
+      {!REVIEW_META_ONLY ? (
+        <>
+          <PlatformBlock
+            title="Google Insights"
+            platform="Google"
+            status={google.status}
+            rows={google.rows}
+            summary={google.summary}
+            accountId={googleAccount}
+            setAccountId={setGoogleAccount}
+            accounts={googleAccounts}
+            onLoad={loadGoogle}
+            pending={google.pending}
+            dateFrom={googleDateFrom}
+            dateTo={googleDateTo}
+            setDateFrom={setGoogleDateFrom}
+            setDateTo={setGoogleDateTo}
+          />
+
+          <PlatformBlock
+            title="TikTok Insights"
+            platform="TikTok"
+            status={tiktok.status}
+            rows={tiktok.rows}
+            summary={tiktok.summary}
+            accountId={tiktokAccount}
+            setAccountId={setTiktokAccount}
+            accounts={tiktokAccounts}
+            onLoad={loadTiktok}
+            pending={tiktok.pending}
+            dateFrom={tiktokDateFrom}
+            dateTo={tiktokDateTo}
+            setDateFrom={setTiktokDateFrom}
+            setDateTo={setTiktokDateTo}
+          />
+        </>
+      ) : null}
+
+      <section className="panel dashboard-analytics-panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Visualization</p>
+            <h2>Shares and trends</h2>
+          </div>
+          <div className="panel-actions">
+            <button className="btn primary" onClick={reloadAll} type="button">Refresh all</button>
+            <span className="chip chip-ghost">Charts</span>
+          </div>
+        </div>
+
+        <div className="chart-grid">
+          <div className="chart-card chart-card-hero">
+            <div className="chart-head">
+              <p className="eyebrow">KPI rings</p>
+              <div className="panel-actions">
+                <input className="field-input" type="date" value={vizDateFrom} onChange={(e) => setVizDateFrom(e.target.value)} {...dateProps} />
+                <input className="field-input" type="date" value={vizDateTo} onChange={(e) => setVizDateTo(e.target.value)} {...dateProps} />
+                <select className="field-input" value={vizMetaAccount} onChange={(e) => setVizMetaAccount(e.target.value)}>
+                  <option value="">Meta: all accounts</option>
+                  {metaAccounts.map((acc) => <option key={acc.id} value={String(acc.id)}>{acc.name || `ID ${acc.id}`}</option>)}
+                </select>
+                <button className="btn ghost" onClick={refreshVisualizationBundle} type="button">Refresh</button>
+                <button className="btn ghost" onClick={exportDashboardPdf} type="button" disabled={exportPending}>
+                  {exportPending ? 'Preparing PDF...' : 'Export PDF'}
+                </button>
+              </div>
+            </div>
+            <RingList totals={overview.totals || {}} platforms={REVIEW_META_ONLY ? ['meta'] : Object.keys(PALETTE)} />
+          </div>
+
+          <div className="chart-card chart-card-hero">
+            <p className="eyebrow">Spend share</p>
+            <div className="chart-donut">
+              <Donut items={spendDonutItems} size={220} centerTop="Spend" />
+            </div>
+            <div className="legend">
+              {spendDonutItems.map((x) => {
+                const total = spendDonutItems.reduce((s, i) => s + i.value, 0)
+                return (
+                  <div className="legend-item" key={x.key}>
+                    <span>{x.label}</span>
+                    <span>{formatMoney(x.value)} · {total ? ((x.value / total) * 100).toFixed(1) : '0.0'}%</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <p className="muted small" style={{ marginTop: 12 }}>{overview.status}</p>
+        {accountsStatus ? <p className="muted small">{accountsStatus}</p> : null}
+
+        <div className="chart-card" style={{ marginTop: 12 }}>
+          <div className="chart-head">
+            <p className="eyebrow">Daily trend</p>
+            <div className="chip chip-ghost">Spend vs Clicks</div>
+          </div>
+          <div className="chart-line">
+            <LineChart series={lineSeries} />
+          </div>
+        </div>
+
+        <div className="chart-card" style={{ marginTop: 12 }}>
+          <div className="chart-head">
+            <p className="eyebrow">Per-account trend</p>
+            <div className="panel-actions">
+              <span className="chip chip-ghost">Meta</span>
+              <select className="field-input" value={accountTrendAccountId} onChange={(e) => setAccountTrendAccountId(e.target.value)}>
+                {!accountTrendAccounts.length ? <option value="">No accounts</option> : null}
+                {accountTrendAccounts.map((row) => (
+                  <option key={`${row.platform}-${row.account_id}`} value={String(row.account_id)}>
+                    {row.name}
+                  </option>
+                ))}
+              </select>
+              <select className="field-input" value={accountTrendMetric} onChange={(e) => setAccountTrendMetric(e.target.value)}>
+                <option value="impressions">Impressions</option>
+                <option value="clicks">Clicks</option>
+                <option value="spend">Spend</option>
+                <option value="conversions">Conversions</option>
+              </select>
+            </div>
+          </div>
+          <div className="chart-line">
+            <AccountMetricChart series={accountTrendSeries} metricLabel={accountTrendMetricLabel} metricType={accountTrendMetric} />
+          </div>
+        </div>
+
+        <div className="chart-grid" style={{ marginTop: 12 }}>
+          <div className="chart-card">
+            <div className="chart-head">
+              <p className="eyebrow">Audience · Age / Gender</p>
+              <div className="panel-actions">
+                <span className="chip chip-ghost">Meta</span>
+              </div>
+            </div>
+            <div className="chart-donut">
+              <Donut items={audienceAgeItems} size={220} centerTop="Impr" centerBottom={formatInt(audienceAgeTotal)} />
+            </div>
+            <div className="legend">
+              {audienceAgeItems.map((x) => (
+                <div className="legend-item" key={x.label}>
+                  <span>{x.label}</span>
+                  <span>{x.value > 0 && audienceAgeTotal > 0 ? ((x.value / audienceAgeTotal) * 100).toFixed(1) : '0.0'}% · {formatInt(x.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="chart-card">
+            <div className="chart-head">
+              <p className="eyebrow">Audience · Geo</p>
+              <div className="panel-actions">
+                <span className="chip chip-ghost">Meta</span>
+                <select className="field-input" value={audienceGeoLevel} onChange={(e) => setAudienceGeoLevel(e.target.value)}>
+                  <option value="country">Countries</option>
+                  <option value="region">Regions</option>
+                  <option value="city">Cities</option>
+                </select>
+              </div>
+            </div>
+            <div className="chart-donut"><Donut items={audienceGeoItems} size={220} centerTop="Impr" /></div>
+            <div className="legend">
+              {audienceGeoItems.map((x) => {
+                const total = audienceGeoItems.reduce((s, i) => s + i.value, 0)
+                return (
+                  <div className="legend-item" key={x.label}>
+                    <span>{x.label}</span>
+                    <span>{total ? ((x.value / total) * 100).toFixed(1) : '0.0'}% · {formatInt(x.value)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="chart-card">
+            <div className="chart-head">
+              <p className="eyebrow">Audience · Devices</p>
+              <div className="panel-actions">
+                <span className="chip chip-ghost">Meta</span>
+              </div>
+            </div>
+            <div className="chart-donut"><Donut items={audienceDeviceItems} size={220} centerTop="Impr" /></div>
+            <div className="legend">
+              {audienceDeviceItems.map((x) => {
+                const total = audienceDeviceItems.reduce((s, i) => s + i.value, 0)
+                return (
+                  <div className="legend-item" key={x.label}>
+                    <span>{x.label}</span>
+                    <span>{total ? ((x.value / total) * 100).toFixed(1) : '0.0'}% · {formatInt(x.value)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <p className="muted small" style={{ marginTop: 12 }}>
+          {audienceStatus || `Audience shares are calculated from impressions for the selected period.`}
+        </p>
+      </section>
+    </AppShell>
+  )
+}
