@@ -27,8 +27,19 @@ export async function POST(request) {
   if (hasDatabase()) {
     await ensureBootstrapData()
     persona = await authenticateDashboardUser(email, password)
+    console.info('[auth/session] db_auth', {
+      email,
+      authenticated: Boolean(persona),
+      role: persona?.role || null,
+      agency_id: persona?.agency?.id || null,
+    })
   } else {
     persona = authenticateByEmailPassword(email, password)
+    console.info('[auth/session] mock_auth', {
+      email,
+      authenticated: Boolean(persona),
+      role: persona?.role || null,
+    })
   }
   if (!persona) {
     return NextResponse.json({ detail: 'Invalid email or password' }, { status: 401 })
@@ -36,6 +47,11 @@ export async function POST(request) {
   const response = NextResponse.json({ session: persona })
   if (hasDatabase()) {
     setSessionPayload(response, persona)
+    console.info('[auth/session] set_db_session_cookie', {
+      email,
+      cookie: SESSION_PAYLOAD_COOKIE,
+      secure: process.env.NODE_ENV === 'production',
+    })
     response.cookies.set(SESSION_COOKIE, '', { path: '/', maxAge: 0 })
   } else {
     createSessionCookie(response, persona)

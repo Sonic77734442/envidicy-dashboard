@@ -17,7 +17,12 @@ export async function GET() {
   }
   if (hasDatabase()) {
     await ensureBootstrapData()
-    return NextResponse.json({ agencies: await listAgenciesDb() })
+    const agencies = await listAgenciesDb()
+    console.info('[platform/mock] list_agencies_db', {
+      count: agencies.length,
+      actor: persona.email,
+    })
+    return NextResponse.json({ agencies })
   }
   return NextResponse.json({ agencies: listAgencies() })
 }
@@ -38,8 +43,22 @@ export async function POST(request) {
     await ensureBootstrapData()
     try {
       const agency = await createAgencyDb({ name, admin_name: adminName, admin_email: adminEmail })
-      return NextResponse.json({ agency, agencies: await listAgenciesDb() }, { status: 201 })
+      const agencies = await listAgenciesDb()
+      console.info('[platform/mock] create_agency_db', {
+        actor: persona.email,
+        agency_id: agency.id,
+        agency_name: agency.name,
+        admin_email: agency.admin_email,
+        agencies_count: agencies.length,
+      })
+      return NextResponse.json({ agency, agencies }, { status: 201 })
     } catch (error) {
+      console.error('[platform/mock] create_agency_db_failed', {
+        actor: persona.email,
+        name,
+        admin_email: adminEmail,
+        detail: error?.message || 'Failed to create agency',
+      })
       return NextResponse.json({ detail: error?.message || 'Failed to create agency' }, { status: 400 })
     }
   }
