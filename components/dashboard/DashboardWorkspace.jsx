@@ -327,7 +327,7 @@ function AccountMetricChart({ series, metricLabel, metricType }) {
 }
 
 export default function DashboardWorkspace() {
-  const ENABLED_DASHBOARD_PLATFORMS = ['meta', 'google']
+  const ENABLED_DASHBOARD_PLATFORMS = ['meta']
   const router = useRouter()
   const initialDates = useMemo(() => dateInput(30), [])
   const [metaDateFrom, setMetaDateFrom] = useState(initialDates.from)
@@ -390,7 +390,6 @@ export default function DashboardWorkspace() {
     const totals = overview.totals || {}
     return {
       meta: totals.meta || {},
-      google: totals.google || {},
     }
   }, [overview.totals])
 
@@ -399,12 +398,11 @@ export default function DashboardWorkspace() {
     const daily = overview.daily || {}
     return range.map((date) => {
       const m = (daily.meta || []).find((row) => row.date === date) || {}
-      const g = (daily.google || []).find((row) => row.date === date) || {}
       return {
         date,
-        spend: Number(m.spend || 0) + Number(g.spend || 0),
-        clicks: Number(m.clicks || 0) + Number(g.clicks || 0),
-        conversions: Number(m.conversions || 0) + Number(g.conversions || 0),
+        spend: Number(m.spend || 0),
+        clicks: Number(m.clicks || 0),
+        conversions: Number(m.conversions || 0),
       }
     })
   }, [overview.daily, vizDateFrom, vizDateTo])
@@ -468,11 +466,11 @@ export default function DashboardWorkspace() {
       params.set('meta_date_to', metaDateTo)
       if (vizMetaAccount || metaAccount) params.set('meta_account_id', vizMetaAccount || metaAccount)
       if (metaAccount) params.set('meta_platform_account_id', metaAccount)
-      params.set('audience_age_platform', audienceAgePlatform)
-      params.set('audience_geo_platform', audienceGeoPlatform)
+      params.set('audience_age_platform', 'meta')
+      params.set('audience_geo_platform', 'meta')
       params.set('audience_geo_level', audienceGeoLevel)
-      params.set('audience_device_platform', audienceDevicePlatform)
-      params.set('account_trend_platform', accountTrendPlatform)
+      params.set('audience_device_platform', 'meta')
+      params.set('account_trend_platform', 'meta')
       params.set('account_trend_metric', accountTrendMetric)
       if (accountTrendAccountId) params.set('account_trend_account_id', accountTrendAccountId)
 
@@ -624,9 +622,8 @@ export default function DashboardWorkspace() {
     const selectedMeta = vizMetaAccount || metaAccount
     const requests = [
       safeFetch(`/api/dashboard/reporting/audience?${params.toString()}&platform=meta&group=${group}${selectedMeta ? `&account_id=${selectedMeta}` : ''}`).catch(() => null),
-      safeFetch(`/api/dashboard/reporting/audience?${params.toString()}&platform=google&group=${group}`).catch(() => null),
     ]
-    const [metaResp, googleResp] = await Promise.all(requests)
+    const [metaResp] = await Promise.all(requests)
 
     const rows = []
     const errors = []
@@ -679,7 +676,7 @@ export default function DashboardWorkspace() {
       })
     }
 
-    await Promise.all([parsePayload(metaResp, 'Meta'), parsePayload(googleResp, 'Google')])
+    await Promise.all([parsePayload(metaResp, 'Meta')])
     return { rows, errors }
   }
 
@@ -707,7 +704,7 @@ export default function DashboardWorkspace() {
   }
 
   async function reloadAll() {
-    await Promise.all([loadMeta(), loadGoogle(), refreshVisualizationBundle()])
+    await Promise.all([loadMeta(), refreshVisualizationBundle()])
   }
 
   useEffect(() => {
@@ -749,26 +746,26 @@ export default function DashboardWorkspace() {
   const activePlatforms = Object.values(overviewTotalsForUi).filter((item) => Number(item?.spend || 0) > 0).length
   const selectedWindow = `${vizDateFrom} - ${vizDateTo}`
   const heroCards = [
-    { label: 'Spend', value: `$${formatMoney(totalSpend)}`, note: 'Across connected Meta and Google accounts' },
+    { label: 'Spend', value: `$${formatMoney(totalSpend)}`, note: 'Across connected Meta accounts' },
     { label: 'Impressions', value: formatInt(totalImpressions), note: 'Delivery for the selected period' },
-    { label: 'Clicks', value: formatInt(totalClicks), note: 'Unified traffic slice across active platforms' },
+    { label: 'Clicks', value: formatInt(totalClicks), note: 'Meta delivery slice' },
     { label: 'Conversions', value: formatInt(totalTrackedConversions), note: `Value $${formatMoney(totalConversionValue)} from synced conversion sources` },
-    { label: 'Accounts', value: formatInt(totalAccounts), note: `${activePlatforms}/2 platforms active in overview` },
+    { label: 'Accounts', value: formatInt(totalAccounts), note: 'Activated Meta accounts in the reviewer flow' },
   ]
 
   return (
     <AppShell
       eyebrow="Envidicy · Insights"
       title="Unified dashboard"
-      subtitle="Overview across connected Meta and Google ad accounts."
+      subtitle="Meta reviewer flow: agency-owned import, sync, and internal reporting."
     >
       <section className="dashboard-hero panel">
         <div className="dashboard-hero-grid">
           <div className="dashboard-hero-main">
             <p className="eyebrow">Overview</p>
-            <h1>Cross-platform performance dashboard</h1>
+            <h1>Meta reporting dashboard</h1>
             <p className="dashboard-hero-copy">
-              Unified Meta and Google overview with quick access to spend, delivery, clicks, and audience data for the selected period.
+              Reviewer-safe Meta-only screen: agency account import, sync, and internal client reporting without Meta authentication.
             </p>
             <div className="dashboard-hero-actions">
               <button className="btn primary" onClick={exportDashboardPdf} type="button">
@@ -794,7 +791,7 @@ export default function DashboardWorkspace() {
               </div>
               <div className="dashboard-hero-side-row">
                 <span>Active platforms</span>
-                <strong>{`${activePlatforms}/2`}</strong>
+                <strong>{`${activePlatforms}/1`}</strong>
               </div>
               <div className="dashboard-hero-side-row">
                 <span>Tracked conversions</span>
@@ -830,23 +827,6 @@ export default function DashboardWorkspace() {
         dateTo={metaDateTo}
         setDateFrom={setMetaDateFrom}
         setDateTo={setMetaDateTo}
-      />
-
-      <PlatformBlock
-        title="Google Insights"
-        platform="Google"
-        status={google.status}
-        rows={google.rows}
-        summary={google.summary}
-        accountId={googleAccount}
-        setAccountId={setGoogleAccount}
-        accounts={googleAccounts}
-        onLoad={loadGoogle}
-        pending={google.pending}
-        dateFrom={googleDateFrom}
-        dateTo={googleDateTo}
-        setDateFrom={setGoogleDateFrom}
-        setDateTo={setGoogleDateTo}
       />
 
       <section className="panel dashboard-analytics-panel">
@@ -917,10 +897,7 @@ export default function DashboardWorkspace() {
           <div className="chart-head">
               <p className="eyebrow">Per-account trend</p>
               <div className="panel-actions">
-              <select className="field-input" value={accountTrendPlatform} onChange={(e) => setAccountTrendPlatform(e.target.value)}>
-                <option value="meta">Meta</option>
-                <option value="google">Google</option>
-              </select>
+              <span className="chip chip-ghost">Meta</span>
               <select className="field-input" value={accountTrendAccountId} onChange={(e) => setAccountTrendAccountId(e.target.value)}>
                 {!accountTrendAccounts.length ? <option value="">No accounts</option> : null}
                 {accountTrendAccounts.map((row) => (
@@ -947,11 +924,7 @@ export default function DashboardWorkspace() {
             <div className="chart-head">
               <p className="eyebrow">Audience · Age / Gender</p>
               <div className="panel-actions">
-                <select className="field-input" value={audienceAgePlatform} onChange={(e) => setAudienceAgePlatform(e.target.value)}>
-                  <option value="all">All platforms</option>
-                  <option value="meta">Meta</option>
-                  <option value="google">Google</option>
-                </select>
+                <span className="chip chip-ghost">Meta</span>
               </div>
             </div>
             <div className="chart-donut">
@@ -971,11 +944,7 @@ export default function DashboardWorkspace() {
             <div className="chart-head">
               <p className="eyebrow">Audience · Geo</p>
               <div className="panel-actions">
-                <select className="field-input" value={audienceGeoPlatform} onChange={(e) => setAudienceGeoPlatform(e.target.value)}>
-                  <option value="all">All platforms</option>
-                  <option value="meta">Meta</option>
-                  <option value="google">Google</option>
-                </select>
+                <span className="chip chip-ghost">Meta</span>
                 <select className="field-input" value={audienceGeoLevel} onChange={(e) => setAudienceGeoLevel(e.target.value)}>
                   <option value="country">Countries</option>
                   <option value="region">Regions</option>
@@ -1001,11 +970,7 @@ export default function DashboardWorkspace() {
             <div className="chart-head">
               <p className="eyebrow">Audience · Devices</p>
               <div className="panel-actions">
-                <select className="field-input" value={audienceDevicePlatform} onChange={(e) => setAudienceDevicePlatform(e.target.value)}>
-                  <option value="all">All platforms</option>
-                  <option value="meta">Meta</option>
-                  <option value="google">Google</option>
-                </select>
+                <span className="chip chip-ghost">Meta</span>
               </div>
             </div>
             <div className="chart-donut"><Donut items={audienceDeviceItems} size={220} centerTop="Impr" /></div>

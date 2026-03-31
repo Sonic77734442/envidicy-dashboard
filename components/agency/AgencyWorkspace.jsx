@@ -12,7 +12,7 @@ function AccountPill({ account }) {
 }
 
 export default function AgencyWorkspace() {
-  const ENABLED_AGENCY_PLATFORMS = ['meta', 'google']
+  const ENABLED_AGENCY_PLATFORMS = ['meta']
   const [payload, setPayload] = useState({
     agency: null,
     accounts: [],
@@ -29,11 +29,9 @@ export default function AgencyWorkspace() {
   const [pending, setPending] = useState(false)
   const [createPending, setCreatePending] = useState(false)
   const [metaImportPending, setMetaImportPending] = useState(false)
-  const [googleDiscoverPending, setGoogleDiscoverPending] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState('')
   const [selectedAccountIds, setSelectedAccountIds] = useState([])
   const [activatedAccountIds, setActivatedAccountIds] = useState([])
-  const [selectedGoogleExternalIds, setSelectedGoogleExternalIds] = useState([])
   const [form, setForm] = useState({ name: '', viewer_name: '', viewer_email: '' })
 
   async function loadWorkspace() {
@@ -54,11 +52,6 @@ export default function AgencyWorkspace() {
       const firstClientId = merged?.clients?.[0]?.id || ''
       setSelectedClientId((current) => current || firstClientId)
       setActivatedAccountIds((integrationData.dashboard_accounts || []).map((account) => String(account.id)))
-      setSelectedGoogleExternalIds(
-        (integrationData.external_accounts || [])
-          .filter((account) => account.provider === 'google' && account.selected_for_sync)
-          .map((account) => String(account.id))
-      )
       setStatus('Agency workspace ready.')
     } catch (error) {
       setStatus(error?.message || 'Failed to load agency workspace')
@@ -231,33 +224,6 @@ export default function AgencyWorkspace() {
     }
   }
 
-  async function discoverGoogleAds(connectionId) {
-    setPending(true)
-    setGoogleDiscoverPending(true)
-    try {
-      const res = await fetch('/api/dashboard/integrations/google/discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connection_id: connectionId }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.detail || 'Failed to discover Google Ads accounts')
-      }
-      const data = await res.json().catch(() => ({}))
-      await loadWorkspace()
-      const discoveredCount = Array.isArray(data?.discovered?.discovered_customers)
-        ? data.discovered.discovered_customers.length
-        : 0
-      setStatus(`Google Ads discovery completed. Customers found: ${discoveredCount}.`)
-    } catch (error) {
-      setStatus(error?.message || 'Failed to discover Google Ads accounts')
-    } finally {
-      setPending(false)
-      setGoogleDiscoverPending(false)
-    }
-  }
-
   async function saveActivatedAccounts() {
     setPending(true)
     try {
@@ -312,61 +278,6 @@ export default function AgencyWorkspace() {
     )
   }
 
-  function toggleGoogleExternalAccount(accountId) {
-    setSelectedGoogleExternalIds((current) =>
-      current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId]
-    )
-  }
-
-  async function saveSelectedGoogleAccounts() {
-    setPending(true)
-    try {
-      const res = await fetch('/api/dashboard/integrations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'select_external_accounts',
-          provider: 'google',
-          account_ids: selectedGoogleExternalIds,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.detail || 'Failed to update Google selected accounts')
-      }
-      await loadWorkspace()
-      setStatus('Google Ads selected-for-sync set updated.')
-    } catch (error) {
-      setStatus(error?.message || 'Failed to update Google selected accounts')
-    } finally {
-      setPending(false)
-    }
-  }
-
-  async function activateSelectedGoogleAccounts() {
-    setPending(true)
-    try {
-      const res = await fetch('/api/dashboard/integrations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'activate_selected_external_accounts',
-          provider: 'google',
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.detail || 'Failed to activate selected Google accounts')
-      }
-      await loadWorkspace()
-      setStatus('Selected Google Ads accounts were activated in the dashboard.')
-    } catch (error) {
-      setStatus(error?.message || 'Failed to activate selected Google accounts')
-    } finally {
-      setPending(false)
-    }
-  }
-
   const visibleConnections = useMemo(
     () => payload.connections.filter((connection) => ENABLED_AGENCY_PLATFORMS.includes(String(connection.provider || '').toLowerCase())),
     [payload.connections]
@@ -380,16 +291,6 @@ export default function AgencyWorkspace() {
   const visibleDashboardAccounts = useMemo(
     () => payload.dashboard_accounts.filter((account) => ENABLED_AGENCY_PLATFORMS.includes(String(account.platform || '').toLowerCase())),
     [payload.dashboard_accounts]
-  )
-
-  const googleConnections = useMemo(
-    () => payload.connections.filter((connection) => connection.provider === 'google'),
-    [payload.connections]
-  )
-
-  const googleExternalAccounts = useMemo(
-    () => payload.external_accounts.filter((account) => account.provider === 'google'),
-    [payload.external_accounts]
   )
 
   const externalAccountsByConnection = useMemo(() => {
@@ -446,7 +347,7 @@ export default function AgencyWorkspace() {
           <article className="stat">
             <p className="muted">Imported accounts</p>
             <h3>{visibleExternalAccounts.length}</h3>
-            <p className="muted small">These are external ad accounts imported from Meta and Google after the agency connects access.</p>
+            <p className="muted small">These are external ad accounts imported from Meta after the agency connects access.</p>
           </article>
           <article className="stat">
             <p className="muted">Active in dashboard</p>
@@ -460,94 +361,6 @@ export default function AgencyWorkspace() {
           </article>
         </div>
         <p className="muted small" style={{ marginTop: 12 }}>{status}</p>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="eyebrow">Google Ads</p>
-            <h2>Connect, discover, and select accounts</h2>
-          </div>
-        </div>
-        <p className="muted small" style={{ marginBottom: 14 }}>
-          This onboarding is agency-only. Google Ads discovery reads accessible customers, expands MCC children, and lets the agency mark accounts for sync.
-        </p>
-        <div className="grid-3">
-          <article className="stat">
-            <p className="muted">Step 1</p>
-            <h3>Connect Google Ads</h3>
-            <p className="muted small">Authenticate the agency admin through Google OAuth and persist the refresh token server-side.</p>
-            <div className="panel-actions" style={{ marginTop: 12 }}>
-              <button className="btn primary" type="button" onClick={() => connectProvider('google')} disabled={pending}>
-                Connect Google Ads
-              </button>
-            </div>
-          </article>
-          <article className="stat">
-            <p className="muted">Step 2</p>
-            <h3>Discover customers</h3>
-            <p className="muted small">Pull accessible customers, detect manager accounts, and expand first-level MCC children.</p>
-            <div className="panel-actions" style={{ marginTop: 12 }}>
-              {googleConnections.map((connection) => (
-                <button
-                  key={connection.id}
-                  className="btn ghost"
-                  type="button"
-                  onClick={() => discoverGoogleAds(connection.id)}
-                  disabled={pending || connection.status !== 'connected'}
-                >
-                  Discover Google Accounts
-                </button>
-              ))}
-            </div>
-            <p className="muted small" style={{ marginTop: 12 }}>
-              {googleDiscoverPending ? 'Google Ads discovery in progress...' : 'Use this after Google OAuth to populate import candidates.'}
-            </p>
-          </article>
-          <article className="stat">
-            <p className="muted">Step 3</p>
-            <h3>Select for sync</h3>
-            <p className="muted small">Mark discovered Google customers that should later be activated and synced.</p>
-            <div className="panel-actions" style={{ marginTop: 12 }}>
-              <button className="btn primary" type="button" onClick={saveSelectedGoogleAccounts} disabled={pending || !googleExternalAccounts.length}>
-                Save Google selections
-              </button>
-              <button className="btn ghost" type="button" onClick={activateSelectedGoogleAccounts} disabled={pending || !googleExternalAccounts.length}>
-                Activate selected Google accounts
-              </button>
-            </div>
-          </article>
-        </div>
-        <div className="table-wrapper" style={{ marginTop: 16 }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Use</th>
-                <th>Customer</th>
-                <th>Customer ID</th>
-                <th>Type</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {googleExternalAccounts.map((account) => (
-                <tr key={account.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedGoogleExternalIds.includes(String(account.id))}
-                      onChange={() => toggleGoogleExternalAccount(String(account.id))}
-                    />
-                  </td>
-                  <td>{account.name}</td>
-                  <td>{account.external_id}</td>
-                  <td>{account.metadata_json?.is_manager ? 'MCC' : 'Customer'}</td>
-                  <td>{account.selected_for_sync ? 'Selected for sync' : 'Imported only'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
 
       <section className="panel">

@@ -13,7 +13,7 @@ export default async function HomePage() {
             <p className="eyebrow">Purpose</p>
             <h1>Connect ad accounts and deliver client reporting</h1>
             <p className="dashboard-hero-copy">
-              Envidicy Dashboard is a SaaS application for agencies. Agency admins connect Meta and Google Ads, import the ad accounts they can access, activate selected accounts for sync, and provide clients with read-only dashboards that show only assigned reporting data.
+              Envidicy Dashboard is a SaaS application for agencies. Agency admins connect supported ad platforms, import the ad accounts they can access, activate selected accounts for sync, and provide clients with read-only dashboards that show only assigned reporting data.
             </p>
             <div className="dashboard-hero-actions">
               <a className="btn primary" href="/login">Sign in</a>
