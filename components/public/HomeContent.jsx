@@ -10,7 +10,6 @@ const COPY = {
     body:
       'Envidicy Dashboard is a SaaS application for agencies. Agency admins connect supported ad platforms, import the ad accounts they can access, activate selected accounts for sync, and provide clients with read-only dashboards that show only assigned reporting data.',
     signIn: 'Sign in',
-    guide: 'Reviewer guide',
     privacy: 'Privacy Policy',
     terms: 'Terms of Use',
     access: 'Access model',
@@ -36,7 +35,6 @@ const COPY = {
     body:
       'Envidicy Dashboard — это SaaS-приложение для агентств. Администраторы агентства подключают поддерживаемые рекламные платформы, импортируют доступные им аккаунты, активируют выбранные аккаунты для синхронизации и выдают клиентам read-only дашборды только с назначенными данными.',
     signIn: 'Войти',
-    guide: 'Гайд для ревью',
     privacy: 'Политика конфиденциальности',
     terms: 'Условия использования',
     access: 'Модель доступа',
@@ -86,11 +84,26 @@ export default function HomeContent() {
             <p className="dashboard-hero-copy">{t.body}</p>
             <div className="dashboard-hero-actions">
               <a className="btn primary" href="/login">{t.signIn}</a>
-              <a className="btn ghost" href="/review">{t.guide}</a>
             </div>
             <div className="dashboard-hero-pills">
-              <a className="chip chip-ghost" href="https://www.envidicy.kz/policy.pdf" target="_blank" rel="noreferrer">{t.privacy}</a>
-              <a className="chip chip-ghost" href="https://www.envidicy.kz/term-of-use.pdf" target="_blank" rel="noreferrer">{t.terms}</a>
+              <a
+                className="chip chip-ghost"
+                href="https://www.envidicy.kz/policy.pdf"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#f7fafc', borderColor: 'rgba(247, 250, 252, 0.34)', background: 'rgba(247, 250, 252, 0.08)' }}
+              >
+                {t.privacy}
+              </a>
+              <a
+                className="chip chip-ghost"
+                href="https://www.envidicy.kz/term-of-use.pdf"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#f7fafc', borderColor: 'rgba(247, 250, 252, 0.34)', background: 'rgba(247, 250, 252, 0.08)' }}
+              >
+                {t.terms}
+              </a>
             </div>
           </div>
           <div className="dashboard-hero-side">
