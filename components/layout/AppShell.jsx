@@ -27,6 +27,7 @@ export default function AppShell({ eyebrow, title, subtitle, children }) {
   const pathname = usePathname()
   const [session, setSession] = useState(null)
   const navItems = getNavItems(session)
+  const showSidebar = !(pathname === '/' && !session)
 
   useEffect(() => {
     let active = true
@@ -54,71 +55,73 @@ export default function AppShell({ eyebrow, title, subtitle, children }) {
 
   return (
     <>
-      <nav className="sidebar">
-        <div className="sidebar-brand">Envidicy Dashboard</div>
-        <div className="nav">
-          {navItems.map((item) => (
-            <a key={item.href} className={`nav-link ${pathname === item.href ? 'active' : ''}`} href={item.href}>
-              {item.label}
-            </a>
-          ))}
-        </div>
-        <div className="nav-footer">
-          {session ? (
-            <>
-              <span className="muted small">{getPersonaLabel(session)}</span>
-              <span className="muted small">
-                {session.role === 'platform_owner'
-                  ? 'Envidicy platform level'
-                  : session.role === 'agency_admin'
-                    ? `${session.agency?.name || 'Agency'} · manages access and integrations`
-                    : `${session.client?.name || 'Client'} · read-only`}
-              </span>
-              <button className="nav-link nav-exit" type="button" onClick={logout}>
-                Sign out
-              </button>
-              <a
-                className="nav-link"
-                href="https://www.envidicy.kz/term-of-use.pdf"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Terms of Use
+      {showSidebar ? (
+        <nav className="sidebar">
+          <div className="sidebar-brand">Envidicy Dashboard</div>
+          <div className="nav">
+            {navItems.map((item) => (
+              <a key={item.href} className={`nav-link ${pathname === item.href ? 'active' : ''}`} href={item.href}>
+                {item.label}
               </a>
-              <a
-                className="nav-link"
-                href="https://www.envidicy.kz/policy.pdf"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Privacy Policy
-              </a>
-            </>
-          ) : (
-            <>
-              <a className="nav-link" href="/login">Sign in</a>
-              <a
-                className="nav-link"
-                href="https://www.envidicy.kz/term-of-use.pdf"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Terms of Use
-              </a>
-              <a
-                className="nav-link"
-                href="https://www.envidicy.kz/policy.pdf"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Privacy Policy
-              </a>
-            </>
-          )}
-        </div>
-      </nav>
+            ))}
+          </div>
+          <div className="nav-footer">
+            {session ? (
+              <>
+                <span className="muted small">{getPersonaLabel(session)}</span>
+                <span className="muted small">
+                  {session.role === 'platform_owner'
+                    ? 'Envidicy platform level'
+                    : session.role === 'agency_admin'
+                      ? `${session.agency?.name || 'Agency'} · manages access and integrations`
+                      : `${session.client?.name || 'Client'} · read-only`}
+                </span>
+                <button className="nav-link nav-exit" type="button" onClick={logout}>
+                  Sign out
+                </button>
+                <a
+                  className="nav-link"
+                  href="https://www.envidicy.kz/term-of-use.pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Terms of Use
+                </a>
+                <a
+                  className="nav-link"
+                  href="https://www.envidicy.kz/policy.pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Privacy Policy
+                </a>
+              </>
+            ) : (
+              <>
+                <a className="nav-link" href="/login">Sign in</a>
+                <a
+                  className="nav-link"
+                  href="https://www.envidicy.kz/term-of-use.pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Terms of Use
+                </a>
+                <a
+                  className="nav-link"
+                  href="https://www.envidicy.kz/policy.pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Privacy Policy
+                </a>
+              </>
+            )}
+          </div>
+        </nav>
+      ) : null}
 
-      <div className="app with-sidebar plan-app">
+      <div className={`app ${showSidebar ? 'with-sidebar' : ''} plan-app`}>
         <div className="bg-blur" />
         <header className="topbar">
           <div className="topbar-right">
