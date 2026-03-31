@@ -77,9 +77,43 @@ export default function AppShell({ eyebrow, title, subtitle, children }) {
               <button className="nav-link nav-exit" type="button" onClick={logout}>
                 Sign out
               </button>
+              <a
+                className="nav-link"
+                href="https://www.envidicy.kz/term-of-use.pdf"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Terms of Use
+              </a>
+              <a
+                className="nav-link"
+                href="https://www.envidicy.kz/politics"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Privacy Policy
+              </a>
             </>
           ) : (
-            <a className="nav-link" href="/login">Sign in</a>
+            <>
+              <a className="nav-link" href="/login">Sign in</a>
+              <a
+                className="nav-link"
+                href="https://www.envidicy.kz/term-of-use.pdf"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Terms of Use
+              </a>
+              <a
+                className="nav-link"
+                href="https://www.envidicy.kz/politics"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Privacy Policy
+              </a>
+            </>
           )}
         </div>
       </nav>

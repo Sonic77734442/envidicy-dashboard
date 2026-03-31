@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { requireAgencyAccess } from '../../../../lib/server/dashboard-api/authz'
 import {
+  activateSelectedExternalAccounts,
   getIntegrationsSnapshot,
   runConnectProvider,
+  updateSelectedExternalAccounts,
   updateDashboardAccounts,
 } from '../../../../lib/server/dashboard-api/integrations'
 import { getConversionsSnapshot } from '../../../../lib/server/dashboard-api/conversions'
@@ -49,6 +51,22 @@ export async function POST(request) {
     const response = NextResponse.json({
       ...(await buildAgencyPayload(agencyId)),
       ...(await updateDashboardAccounts(agencyId, Array.isArray(body?.account_ids) ? body.account_ids : [])),
+    })
+    return persistAgencySession(response, agencyId)
+  }
+  if (action === 'select_external_accounts') {
+    const provider = String(body?.provider || '').trim()
+    const response = NextResponse.json({
+      ...(await buildAgencyPayload(agencyId)),
+      ...(await updateSelectedExternalAccounts(agencyId, provider, Array.isArray(body?.account_ids) ? body.account_ids : [])),
+    })
+    return persistAgencySession(response, agencyId)
+  }
+  if (action === 'activate_selected_external_accounts') {
+    const provider = String(body?.provider || '').trim()
+    const response = NextResponse.json({
+      ...(await buildAgencyPayload(agencyId)),
+      ...(await activateSelectedExternalAccounts(agencyId, provider)),
     })
     return persistAgencySession(response, agencyId)
   }

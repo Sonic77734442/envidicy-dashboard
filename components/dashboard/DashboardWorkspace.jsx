@@ -327,7 +327,7 @@ function AccountMetricChart({ series, metricLabel, metricType }) {
 }
 
 export default function DashboardWorkspace() {
-  const REVIEW_META_ONLY = true
+  const ENABLED_DASHBOARD_PLATFORMS = ['meta', 'google']
   const router = useRouter()
   const initialDates = useMemo(() => dateInput(30), [])
   const [metaDateFrom, setMetaDateFrom] = useState(initialDates.from)
@@ -378,54 +378,42 @@ export default function DashboardWorkspace() {
     () => accounts.filter((acc) => String(acc.platform || '').toLowerCase().trim() === 'google'),
     [accounts]
   )
-  const tiktokAccounts = useMemo(
-    () => accounts.filter((acc) => String(acc.platform || '').toLowerCase().trim() === 'tiktok'),
-    [accounts]
-  )
-
   const spendDonutItems = useMemo(() => {
     const totals = overview.totals || {}
-    const allowedPlatforms = REVIEW_META_ONLY ? ['meta'] : Object.keys(PALETTE)
+    const allowedPlatforms = ENABLED_DASHBOARD_PLATFORMS
     return allowedPlatforms
       .map((key) => ({ key, label: platformLabel(key), value: Number(totals?.[key]?.spend || 0) }))
       .filter((x) => x.value > 0)
-  }, [overview.totals, REVIEW_META_ONLY])
+  }, [overview.totals])
 
   const overviewTotalsForUi = useMemo(() => {
     const totals = overview.totals || {}
-    if (!REVIEW_META_ONLY) return totals
-    return { meta: totals.meta || {} }
-  }, [overview.totals, REVIEW_META_ONLY])
+    return {
+      meta: totals.meta || {},
+      google: totals.google || {},
+    }
+  }, [overview.totals])
 
   const lineSeries = useMemo(() => {
     const range = buildDateRange(vizDateFrom, vizDateTo)
     const daily = overview.daily || {}
     return range.map((date) => {
       const m = (daily.meta || []).find((row) => row.date === date) || {}
-      if (REVIEW_META_ONLY) {
-        return {
-          date,
-          spend: Number(m.spend || 0),
-          clicks: Number(m.clicks || 0),
-          conversions: Number(m.conversions || 0),
-        }
-      }
       const g = (daily.google || []).find((row) => row.date === date) || {}
-      const t = (daily.tiktok || []).find((row) => row.date === date) || {}
       return {
         date,
-        spend: Number(m.spend || 0) + Number(g.spend || 0) + Number(t.spend || 0),
-        clicks: Number(m.clicks || 0) + Number(g.clicks || 0) + Number(t.clicks || 0),
-        conversions: Number(m.conversions || 0) + Number(g.conversions || 0) + Number(t.conversions || 0),
+        spend: Number(m.spend || 0) + Number(g.spend || 0),
+        clicks: Number(m.clicks || 0) + Number(g.clicks || 0),
+        conversions: Number(m.conversions || 0) + Number(g.conversions || 0),
       }
     })
-  }, [overview.daily, vizDateFrom, vizDateTo, REVIEW_META_ONLY])
+  }, [overview.daily, vizDateFrom, vizDateTo])
 
   const accountTrendAccounts = useMemo(() => {
-    const platformKey = REVIEW_META_ONLY ? 'meta' : accountTrendPlatform
+    const platformKey = accountTrendPlatform
     const rows = overview?.daily_by_account?.[platformKey] || []
     return Array.isArray(rows) ? rows : []
-  }, [overview?.daily_by_account, accountTrendPlatform, REVIEW_META_ONLY])
+  }, [overview?.daily_by_account, accountTrendPlatform])
 
   useEffect(() => {
     if (!accountTrendAccounts.length) {
@@ -480,11 +468,11 @@ export default function DashboardWorkspace() {
       params.set('meta_date_to', metaDateTo)
       if (vizMetaAccount || metaAccount) params.set('meta_account_id', vizMetaAccount || metaAccount)
       if (metaAccount) params.set('meta_platform_account_id', metaAccount)
-      params.set('audience_age_platform', 'meta')
-      params.set('audience_geo_platform', 'meta')
+      params.set('audience_age_platform', audienceAgePlatform)
+      params.set('audience_geo_platform', audienceGeoPlatform)
       params.set('audience_geo_level', audienceGeoLevel)
-      params.set('audience_device_platform', 'meta')
-      params.set('account_trend_platform', 'meta')
+      params.set('audience_device_platform', audienceDevicePlatform)
+      params.set('account_trend_platform', accountTrendPlatform)
       params.set('account_trend_metric', accountTrendMetric)
       if (accountTrendAccountId) params.set('account_trend_account_id', accountTrendAccountId)
 
@@ -636,8 +624,9 @@ export default function DashboardWorkspace() {
     const selectedMeta = vizMetaAccount || metaAccount
     const requests = [
       safeFetch(`/api/dashboard/reporting/audience?${params.toString()}&platform=meta&group=${group}${selectedMeta ? `&account_id=${selectedMeta}` : ''}`).catch(() => null),
+      safeFetch(`/api/dashboard/reporting/audience?${params.toString()}&platform=google&group=${group}`).catch(() => null),
     ]
-    const [metaResp] = await Promise.all(requests)
+    const [metaResp, googleResp] = await Promise.all(requests)
 
     const rows = []
     const errors = []
@@ -690,7 +679,7 @@ export default function DashboardWorkspace() {
       })
     }
 
-    await Promise.all([parsePayload(metaResp, 'Meta')])
+    await Promise.all([parsePayload(metaResp, 'Meta'), parsePayload(googleResp, 'Google')])
     return { rows, errors }
   }
 
@@ -718,7 +707,7 @@ export default function DashboardWorkspace() {
   }
 
   async function reloadAll() {
-    await Promise.all([loadMeta(), refreshVisualizationBundle()])
+    await Promise.all([loadMeta(), loadGoogle(), refreshVisualizationBundle()])
   }
 
   useEffect(() => {
@@ -760,28 +749,26 @@ export default function DashboardWorkspace() {
   const activePlatforms = Object.values(overviewTotalsForUi).filter((item) => Number(item?.spend || 0) > 0).length
   const selectedWindow = `${vizDateFrom} - ${vizDateTo}`
   const heroCards = [
-    { label: 'Spend', value: `$${formatMoney(totalSpend)}`, note: REVIEW_META_ONLY ? 'Across connected Meta accounts' : 'Across all connected platforms' },
+    { label: 'Spend', value: `$${formatMoney(totalSpend)}`, note: 'Across connected Meta and Google accounts' },
     { label: 'Impressions', value: formatInt(totalImpressions), note: 'Delivery for the selected period' },
-    { label: 'Clicks', value: formatInt(totalClicks), note: REVIEW_META_ONLY ? 'Meta delivery slice' : 'Unified traffic slice across platforms' },
+    { label: 'Clicks', value: formatInt(totalClicks), note: 'Unified traffic slice across active platforms' },
     { label: 'Conversions', value: formatInt(totalTrackedConversions), note: `Value $${formatMoney(totalConversionValue)} from synced conversion sources` },
-    { label: 'Accounts', value: formatInt(totalAccounts), note: REVIEW_META_ONLY ? 'Activated Meta accounts in the reviewer flow' : `${activePlatforms}/3 platforms active in overview` },
+    { label: 'Accounts', value: formatInt(totalAccounts), note: `${activePlatforms}/2 platforms active in overview` },
   ]
 
   return (
     <AppShell
       eyebrow="Envidicy · Insights"
       title="Unified dashboard"
-      subtitle={REVIEW_META_ONLY ? 'Meta reviewer flow: agency-owned import, sync, and internal reporting.' : 'Overview across connected ad accounts.'}
+      subtitle="Overview across connected Meta and Google ad accounts."
     >
       <section className="dashboard-hero panel">
         <div className="dashboard-hero-grid">
           <div className="dashboard-hero-main">
             <p className="eyebrow">Overview</p>
-            <h1>{REVIEW_META_ONLY ? 'Meta reporting dashboard' : 'Cross-platform performance dashboard'}</h1>
+            <h1>Cross-platform performance dashboard</h1>
             <p className="dashboard-hero-copy">
-              {REVIEW_META_ONLY
-                ? 'Reviewer-safe Meta-only screen: agency account import, sync, and internal client reporting without Meta authentication.'
-                : 'Unified Meta, Google, and TikTok overview with quick access to spend, delivery, clicks, and audience data for the selected period.'}
+              Unified Meta and Google overview with quick access to spend, delivery, clicks, and audience data for the selected period.
             </p>
             <div className="dashboard-hero-actions">
               <button className="btn primary" onClick={exportDashboardPdf} type="button">
@@ -807,7 +794,7 @@ export default function DashboardWorkspace() {
               </div>
               <div className="dashboard-hero-side-row">
                 <span>Active platforms</span>
-                <strong>{REVIEW_META_ONLY ? `${activePlatforms}/1` : `${activePlatforms}/3`}</strong>
+                <strong>{`${activePlatforms}/2`}</strong>
               </div>
               <div className="dashboard-hero-side-row">
                 <span>Tracked conversions</span>
@@ -845,43 +832,22 @@ export default function DashboardWorkspace() {
         setDateTo={setMetaDateTo}
       />
 
-      {!REVIEW_META_ONLY ? (
-        <>
-          <PlatformBlock
-            title="Google Insights"
-            platform="Google"
-            status={google.status}
-            rows={google.rows}
-            summary={google.summary}
-            accountId={googleAccount}
-            setAccountId={setGoogleAccount}
-            accounts={googleAccounts}
-            onLoad={loadGoogle}
-            pending={google.pending}
-            dateFrom={googleDateFrom}
-            dateTo={googleDateTo}
-            setDateFrom={setGoogleDateFrom}
-            setDateTo={setGoogleDateTo}
-          />
-
-          <PlatformBlock
-            title="TikTok Insights"
-            platform="TikTok"
-            status={tiktok.status}
-            rows={tiktok.rows}
-            summary={tiktok.summary}
-            accountId={tiktokAccount}
-            setAccountId={setTiktokAccount}
-            accounts={tiktokAccounts}
-            onLoad={loadTiktok}
-            pending={tiktok.pending}
-            dateFrom={tiktokDateFrom}
-            dateTo={tiktokDateTo}
-            setDateFrom={setTiktokDateFrom}
-            setDateTo={setTiktokDateTo}
-          />
-        </>
-      ) : null}
+      <PlatformBlock
+        title="Google Insights"
+        platform="Google"
+        status={google.status}
+        rows={google.rows}
+        summary={google.summary}
+        accountId={googleAccount}
+        setAccountId={setGoogleAccount}
+        accounts={googleAccounts}
+        onLoad={loadGoogle}
+        pending={google.pending}
+        dateFrom={googleDateFrom}
+        dateTo={googleDateTo}
+        setDateFrom={setGoogleDateFrom}
+        setDateTo={setGoogleDateTo}
+      />
 
       <section className="panel dashboard-analytics-panel">
         <div className="panel-head">
@@ -912,7 +878,7 @@ export default function DashboardWorkspace() {
                 </button>
               </div>
             </div>
-            <RingList totals={overview.totals || {}} platforms={REVIEW_META_ONLY ? ['meta'] : Object.keys(PALETTE)} />
+            <RingList totals={overview.totals || {}} platforms={ENABLED_DASHBOARD_PLATFORMS} />
           </div>
 
           <div className="chart-card chart-card-hero">
@@ -949,9 +915,12 @@ export default function DashboardWorkspace() {
 
         <div className="chart-card" style={{ marginTop: 12 }}>
           <div className="chart-head">
-            <p className="eyebrow">Per-account trend</p>
-            <div className="panel-actions">
-              <span className="chip chip-ghost">Meta</span>
+              <p className="eyebrow">Per-account trend</p>
+              <div className="panel-actions">
+              <select className="field-input" value={accountTrendPlatform} onChange={(e) => setAccountTrendPlatform(e.target.value)}>
+                <option value="meta">Meta</option>
+                <option value="google">Google</option>
+              </select>
               <select className="field-input" value={accountTrendAccountId} onChange={(e) => setAccountTrendAccountId(e.target.value)}>
                 {!accountTrendAccounts.length ? <option value="">No accounts</option> : null}
                 {accountTrendAccounts.map((row) => (
@@ -978,7 +947,11 @@ export default function DashboardWorkspace() {
             <div className="chart-head">
               <p className="eyebrow">Audience · Age / Gender</p>
               <div className="panel-actions">
-                <span className="chip chip-ghost">Meta</span>
+                <select className="field-input" value={audienceAgePlatform} onChange={(e) => setAudienceAgePlatform(e.target.value)}>
+                  <option value="all">All platforms</option>
+                  <option value="meta">Meta</option>
+                  <option value="google">Google</option>
+                </select>
               </div>
             </div>
             <div className="chart-donut">
@@ -998,7 +971,11 @@ export default function DashboardWorkspace() {
             <div className="chart-head">
               <p className="eyebrow">Audience · Geo</p>
               <div className="panel-actions">
-                <span className="chip chip-ghost">Meta</span>
+                <select className="field-input" value={audienceGeoPlatform} onChange={(e) => setAudienceGeoPlatform(e.target.value)}>
+                  <option value="all">All platforms</option>
+                  <option value="meta">Meta</option>
+                  <option value="google">Google</option>
+                </select>
                 <select className="field-input" value={audienceGeoLevel} onChange={(e) => setAudienceGeoLevel(e.target.value)}>
                   <option value="country">Countries</option>
                   <option value="region">Regions</option>
@@ -1024,7 +1001,11 @@ export default function DashboardWorkspace() {
             <div className="chart-head">
               <p className="eyebrow">Audience · Devices</p>
               <div className="panel-actions">
-                <span className="chip chip-ghost">Meta</span>
+                <select className="field-input" value={audienceDevicePlatform} onChange={(e) => setAudienceDevicePlatform(e.target.value)}>
+                  <option value="all">All platforms</option>
+                  <option value="meta">Meta</option>
+                  <option value="google">Google</option>
+                </select>
               </div>
             </div>
             <div className="chart-donut"><Donut items={audienceDeviceItems} size={220} centerTop="Impr" /></div>
