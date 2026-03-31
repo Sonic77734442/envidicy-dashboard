@@ -66,6 +66,17 @@ export default function LoginPage() {
             <p className="auth-status">
               Use the credentials provided in reviewer instructions. Access level is determined by the authenticated account.
             </p>
+            <p className="muted small" style={{ marginTop: 10 }}>
+              By signing in, you agree to the{' '}
+              <a href="https://www.envidicy.kz/term-of-use.pdf" target="_blank" rel="noreferrer">
+                Terms of Use
+              </a>{' '}
+              and acknowledge the{' '}
+              <a href="https://www.envidicy.kz/policy.pdf" target="_blank" rel="noreferrer">
+                Privacy Policy
+              </a>
+              .
+            </p>
             {error ? <p className="auth-status">{error}</p> : null}
           </section>
         </div>

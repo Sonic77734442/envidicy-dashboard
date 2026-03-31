@@ -87,7 +87,7 @@ export default function AppShell({ eyebrow, title, subtitle, children }) {
               </a>
               <a
                 className="nav-link"
-                href="https://www.envidicy.kz/politics"
+                href="https://www.envidicy.kz/policy.pdf"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -107,7 +107,7 @@ export default function AppShell({ eyebrow, title, subtitle, children }) {
               </a>
               <a
                 className="nav-link"
-                href="https://www.envidicy.kz/politics"
+                href="https://www.envidicy.kz/policy.pdf"
                 target="_blank"
                 rel="noreferrer"
               >
