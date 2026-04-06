@@ -13,6 +13,44 @@ function AccountPill({ account }) {
 
 export default function AgencyWorkspace() {
   const ENABLED_AGENCY_PLATFORMS = ['meta']
+  const PROVIDER_UI = {
+    meta: {
+      connectLabel: 'Connect Meta',
+      reconnectLabel: 'Reconnect Meta',
+      connectedLabel: '✓ Meta connected',
+      importLabel: 'Import META Accounts',
+      importPendingLabel: 'Importing Meta accounts...',
+      importHelpConnected: 'This step uses the connected Meta access to discover available ad accounts.',
+      importHelpDisconnected: 'Connect Meta first. After a successful Meta OAuth flow, import can be run immediately.',
+    },
+    google: {
+      connectLabel: 'Connect Google Ads',
+      reconnectLabel: 'Reconnect Google Ads',
+      connectedLabel: '✓ Google connected',
+      importLabel: 'Import Google Accounts',
+      importPendingLabel: 'Importing Google accounts...',
+      importHelpConnected: 'This step uses the connected Google Ads access to discover available ad accounts.',
+      importHelpDisconnected: 'Connect Google Ads first. After a successful OAuth flow, import can be run immediately.',
+    },
+    tiktok: {
+      connectLabel: 'Connect TikTok',
+      reconnectLabel: 'Reconnect TikTok',
+      connectedLabel: '✓ TikTok connected',
+      importLabel: 'Import TikTok Accounts',
+      importPendingLabel: 'Importing TikTok accounts...',
+      importHelpConnected: 'This step uses the connected TikTok access to discover available ad accounts.',
+      importHelpDisconnected: 'Connect TikTok first. After a successful OAuth flow, import can be run immediately.',
+    },
+    yandex: {
+      connectLabel: 'Connect Yandex',
+      reconnectLabel: 'Reconnect Yandex',
+      connectedLabel: '✓ Yandex connected',
+      importLabel: 'Import Yandex Accounts',
+      importPendingLabel: 'Importing Yandex accounts...',
+      importHelpConnected: 'This step uses the connected Yandex access to discover available ad accounts.',
+      importHelpDisconnected: 'Connect Yandex first. After a successful OAuth flow, import can be run immediately.',
+    },
+  }
   const [payload, setPayload] = useState({
     agency: null,
     accounts: [],
@@ -33,6 +71,7 @@ export default function AgencyWorkspace() {
   const [selectedAccountIds, setSelectedAccountIds] = useState([])
   const [activatedAccountIds, setActivatedAccountIds] = useState([])
   const [form, setForm] = useState({ name: '', viewer_name: '', viewer_email: '' })
+  const [showMetaPrompt, setShowMetaPrompt] = useState(false)
 
   async function loadWorkspace() {
     setPending(true)
@@ -304,6 +343,8 @@ export default function AgencyWorkspace() {
   }, [visibleExternalAccounts])
 
   const connectedProviders = visibleConnections.filter((connection) => connection.status === 'connected')
+  const metaConnection = visibleConnections.find((connection) => String(connection.provider || '').toLowerCase() === 'meta') || null
+  const isMetaConnected = Boolean(metaConnection && metaConnection.status === 'connected')
   const importedAccountsCount = visibleExternalAccounts.filter((account) => account.imported_at).length
   const activatedAccountsCount = visibleDashboardAccounts.length
   const canRunSync = activatedAccountsCount > 0
@@ -323,8 +364,73 @@ export default function AgencyWorkspace() {
             ? 'Create the first agency client'
             : 'Assign activated accounts to the client'
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const metaPrompt = params.get('meta_prompt')
+    const metaConnected = params.get('meta_connected')
+    if (metaConnected === '1') {
+      setShowMetaPrompt(false)
+      return
+    }
+    if (metaPrompt === '1' && !connectedProviders.length) {
+      setShowMetaPrompt(true)
+    }
+  }, [connectedProviders.length])
+
+  function dismissMetaPrompt() {
+    setShowMetaPrompt(false)
+    const params = new URLSearchParams(window.location.search)
+    params.delete('meta_prompt')
+    const next = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', next)
+  }
+
+  function getProviderUi(provider) {
+    return PROVIDER_UI[String(provider || '').toLowerCase()] || {
+      connectLabel: `Connect ${String(provider || '').toUpperCase()}`,
+      reconnectLabel: `Reconnect ${String(provider || '').toUpperCase()}`,
+      connectedLabel: `✓ ${String(provider || '').toUpperCase()} connected`,
+      importLabel: `Import ${String(provider || '').toUpperCase()} Accounts`,
+      importPendingLabel: `Importing ${String(provider || '').toUpperCase()} accounts...`,
+      importHelpConnected: 'This step uses the connected source to discover available ad accounts.',
+      importHelpDisconnected: 'Connect the source first. After a successful OAuth flow, import can be run immediately.',
+    }
+  }
+
   return (
     <AppShell eyebrow="Envidicy Dashboard" title="Agency Workspace" subtitle="Connect ad sources, import accounts, and grant clients access only to their reports.">
+      {showMetaPrompt ? (
+        <div className="modal show">
+          <div className="modal-dialog">
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">Meta App Review</p>
+                <h3>Connect Meta to continue</h3>
+              </div>
+            </div>
+            <div className="modal-body">
+              <p className="muted small">
+                The next required step is Meta OAuth. Click <strong>Connect Meta</strong> to open the Meta login window,
+                grant <strong>ads_read</strong> and <strong>business_management</strong>, and return here to import available ad accounts.
+              </p>
+              <div className="dashboard-hero-pills" style={{ marginTop: 12 }}>
+                <span className="chip chip-ghost">1. Login with Meta</span>
+                <span className="chip chip-ghost">2. Grant permissions</span>
+                <span className="chip chip-ghost">3. Import accounts</span>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn primary" type="button" onClick={() => connectProvider('meta')} disabled={pending}>
+                Connect Meta
+              </button>
+              <button className="btn ghost" type="button" onClick={dismissMetaPrompt} disabled={pending}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="panel">
         <div className="panel-head">
           <div>
@@ -377,8 +483,9 @@ export default function AgencyWorkspace() {
             <p className="muted small">Start with Meta. After the agency authorizes access, we can import real ad accounts.</p>
             <div className="panel-actions" style={{ marginTop: 12 }}>
               <button className="btn primary" type="button" onClick={() => connectProvider('meta')} disabled={pending}>
-                Connect Meta
+                {isMetaConnected ? getProviderUi('meta').reconnectLabel : getProviderUi('meta').connectLabel}
               </button>
+              {isMetaConnected ? <span className="chip chip-good">{getProviderUi('meta').connectedLabel}</span> : null}
             </div>
           </article>
 
@@ -387,20 +494,27 @@ export default function AgencyWorkspace() {
             <h3>Import accounts</h3>
             <p className="muted small">After connection, load the available ad accounts. They will appear below as imported accounts.</p>
             <div className="panel-actions" style={{ marginTop: 12 }}>
-              {visibleConnections.map((connection) => (
+              {metaConnection ? (
                 <button
-                  key={connection.id}
-                  className="btn ghost"
+                  className="btn primary"
                   type="button"
-                  onClick={() => importAccounts(connection.id)}
-                  disabled={pending || connection.status !== 'connected'}
+                  onClick={() => importAccounts(metaConnection.id)}
+                  disabled={pending || metaConnection.status !== 'connected'}
                 >
-                  Import {String(connection.provider || '').toUpperCase()}
+                  {metaImportPending ? getProviderUi('meta').importPendingLabel : getProviderUi('meta').importLabel}
                 </button>
-              ))}
+              ) : (
+                <button className="btn primary" type="button" disabled>
+                  {getProviderUi('meta').importLabel}
+                </button>
+              )}
             </div>
             <p className="muted small" style={{ marginTop: 12 }}>
-              {metaImportPending ? 'Meta import in progress...' : 'After a successful Meta connect, import can be run immediately.'}
+              {!isMetaConnected
+                ? getProviderUi('meta').importHelpDisconnected
+                : metaImportPending
+                  ? 'Meta import in progress...'
+                  : getProviderUi('meta').importHelpConnected}
             </p>
           </article>
 

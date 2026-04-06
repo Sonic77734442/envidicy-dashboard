@@ -77,7 +77,7 @@ export default function LoginPage() {
         const data = await res.json().catch(() => ({}))
         throw new Error(data?.detail || t.errorFallback)
       }
-      window.location.assign('/dashboard')
+      window.location.assign('/agency?meta_prompt=1')
     } catch (err) {
       setError(err?.message || t.errorFallback)
     } finally {
